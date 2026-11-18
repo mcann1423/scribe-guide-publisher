@@ -12,15 +12,15 @@ class Tests(unittest.TestCase):
   self.temp=tempfile.TemporaryDirectory(); root=Path(self.temp.name); self.exports=root/'exports'; self.exports.mkdir(); self.output=root/'out'; self.fetch=lambda u,p:(PNG,'.png'); self.pub=Publisher(self.exports,self.output,fetch=self.fetch); self.file=self.exports/'Spam.html'; self.file.write_text(SAMPLE)
  def tearDown(self):self.temp.cleanup()
  def test_publish_update_unpublish_and_durable_notice(self):
-  self.pub.publish(self.file); page=(self.output/'spam.html').read_text(); self.assertIn('Report Spam in Gmail',page); self.assertNotIn('scribehow.com',page); self.assertIn('images/spam/image-001.png',page); self.assertEqual((self.output/'images/spam/image-001.png').read_bytes(),PNG); self.assertIn('spam.html',(self.output/'index.html').read_text())
-  self.file.write_text(SAMPLE.replace('Report Spam in Gmail','Updated title')); self.pub.publish(self.file); self.assertIn('Updated title',(self.output/'index.html').read_text())
-  self.pub.unpublish('spam'); self.assertFalse((self.output/'spam.html').exists()); self.assertFalse((self.output/'images/spam').exists()); self.assertNotIn('spam.html',(self.output/'index.html').read_text()); self.assertEqual(Publisher(self.exports,self.output).state['removals'],['spam.html','images/spam/']); self.assertTrue(self.file.exists())
+  self.pub.publish(self.file); page=(self.output/'spam.html').read_text(encoding='utf-8'); self.assertIn('Report Spam in Gmail',page); self.assertNotIn('scribehow.com',page); self.assertIn('images/spam/image-001.png',page); self.assertEqual((self.output/'images/spam/image-001.png').read_bytes(),PNG); self.assertIn('spam.html',(self.output/'index.html').read_text(encoding='utf-8'))
+  self.file.write_text(SAMPLE.replace('Report Spam in Gmail','Updated title')); self.pub.publish(self.file); self.assertIn('Updated title',(self.output/'index.html').read_text(encoding='utf-8'))
+  self.pub.unpublish('spam'); self.assertFalse((self.output/'spam.html').exists()); self.assertFalse((self.output/'images/spam').exists()); self.assertNotIn('spam.html',(self.output/'index.html').read_text(encoding='utf-8')); self.assertEqual(Publisher(self.exports,self.output).state['removals'],['spam.html','images/spam/']); self.assertTrue(self.file.exists())
  def test_failed_image_retains_previous(self):
   self.pub.publish(self.file); old=(self.output/'spam.html').read_bytes(); self.pub.fetch=lambda *a: (_ for _ in ()).throw(ValueError('download failed')); self.file.write_text(SAMPLE.replace('Select email','changed'))
   with self.assertRaises(ValueError):self.pub.publish(self.file)
   self.assertEqual((self.output/'spam.html').read_bytes(),old)
  def test_sanitizes_script_and_active_html(self):
-  self.file.write_text('<h1>Title</h1><script>alert(1)</script><iframe src="https://evil"></iframe><p onclick="bad()" style="x">Safe <a href="javascript:bad()">Link</a></p>'); self.pub.publish(self.file); page=(self.output/'spam.html').read_text(); self.assertNotIn('alert(1)',page); self.assertNotIn('iframe',page); self.assertNotIn('onclick',page); self.assertNotIn('javascript:',page); self.assertIn('Safe',page)
+  self.file.write_text('<h1>Title</h1><script>alert(1)</script><iframe src="https://evil"></iframe><p onclick="bad()" style="x">Safe <a href="javascript:bad()">Link</a></p>'); self.pub.publish(self.file); page=(self.output/'spam.html').read_text(encoding='utf-8'); self.assertNotIn('alert(1)',page); self.assertNotIn('iframe',page); self.assertNotIn('onclick',page); self.assertNotIn('javascript:',page); self.assertIn('Safe',page)
  def test_collision_and_foreign_files(self):
   (self.exports/'spam!.html').write_text(SAMPLE)
   with self.assertRaises(ValueError):self.pub.publish(self.file)
