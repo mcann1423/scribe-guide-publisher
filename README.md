@@ -2,12 +2,13 @@
 
 Prepare static, public help guides from Scribe HTML exports on a Windows PC. It does not upload files, connect to Apache, or alter the original exports. Guides and screenshots must be reviewed for sensitive information before publication.
 
-## Requirements and setup
+## Install on Windows
 
-- Windows 10/11 and Python 3.10 or later installed from python.org, including Tcl/Tk and the Python launcher (`py`). No third-party packages.
-- Access to the export and prepared website folders, including the H: drive if using defaults.
-- Internet access to download screenshots from the URLs included in exports.
-- Extract this repository to a folder on the PC. Double-click `Start-Guide-Publisher.bat` (or run `py -3 app.py`).
+Download and run `HelpGuidePublisherSetup.exe` from the project's GitHub **Releases** page. The installer includes the application, Python, Tcl/Tk, and its standard-library dependencies; Python does **not** need to be installed separately. It creates Start Menu and optional desktop shortcuts, supports in-place upgrades, and uses the normal Windows uninstaller.
+
+The installer does not install or change Apache, FTP software, browser extensions, services, scheduled tasks, or anything on the web server. You still need access to the export and prepared website folders, including the `H:` drive if using the defaults, plus internet access to download screenshots.
+
+If an installer is not available yet, developers can run the source checkout with Windows 10/11 and Python 3.10 or later (including Tcl/Tk and the Python launcher `py`) by double-clicking `Start-Guide-Publisher.bat`.
 
 The defaults are `H:\HTML\Exports` and `H:\HTML\luna\tech-services\help-guides`. Select different folders with Browse and click **Load / refresh**. The paths must not overlap. Use a **dedicated** output folder: the app owns its `index.html`, `guide-style.css` and `guide-search.js`; it refuses first use if any already exist. Do not manually add files to its per-guide image folders.
 
@@ -34,3 +35,7 @@ State is stored as `.scribe-publisher-state.json` in the export directory, **out
 ## Tests
 
 `py -3 -m unittest discover -s tests -v`. The tests use temporary directories and synthetic image responses, and do not modify H: or contact the network. Live Scribe URLs and Windows/Apache integration must be validated separately in your environment.
+
+## Building the installer
+
+The Windows GitHub Actions workflow runs the tests, bundles the GUI with PyInstaller, then compiles `installer/HelpGuidePublisher.iss` with Inno Setup. Its output is `HelpGuidePublisherSetup.exe`. Tagged builds publish it as a GitHub Release; manually dispatched builds retain it as a workflow artifact. The built application is self-contained, so no dependency downloader or administrator-installed Python is required on the target PC.

@@ -2,3 +2,6 @@ __pycache__/
 *.py[cod]
 .venv/
 .scribe-publisher-state.json
+build/
+dist/
+*.spec
