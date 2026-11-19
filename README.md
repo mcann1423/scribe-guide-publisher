@@ -26,6 +26,12 @@ The defaults are `H:\HTML\Exports` and `H:\HTML\luna\tech-services\help-guides`.
 
 State is stored as `.scribe-publisher-state.json` in the export directory, **outside the public output**. Back up this file with the original exports; it records publication ownership and server cleanup notices. Do not modify or delete it while continuing to use the same output. An export folder is tied to one output folder. The state and output must be restored together from backup. The tool never detects what is actually live on the server.
 
+## Export from Scribe
+
+Click **Export from Scribe** to open a visible Microsoft Edge session. Sign in to Scribe yourself, complete MFA/SSO there, and open the Documents page to the guide list you want. The app does not ask for, receive, or store your Scribe password. Click **Scan accessible guides**, select documents, review their generated filenames, and export them one at a time through Scribe's normal HTML export controls. Exported HTML is saved to the Exports folder; use **Publish locally after each export** only after reviewing what will become public.
+
+The browser keeps a separate local Edge profile so a normal Scribe session can persist for the same Windows user. Its cookies are managed by Edge/Windows and can be cleared by removing the `HelpGuidePublisher\\scribe-edge-profile` folder under `%LOCALAPPDATA%`. The exporter only sees guides visible to the signed-in account. It does not use Scribe's undocumented APIs, bypass sharing permissions, or automate CAPTCHA or MFA. Scribe UI changes, export permissions, and inaccessible guides can stop a batch; the visible browser stays open so you can correct the issue and retry.
+
 ## Behavior and limitations
 
 - Downloads PNG, JPEG, GIF and WebP images (up to 25 MB each), based on actual file signatures. Relative image paths must stay within the export directory. An unavailable or unsupported image blocks that guide's publication/update; a previous version is retained for download failures. No network access occurs during website viewing for guide images.
@@ -42,4 +48,4 @@ State is stored as `.scribe-publisher-state.json` in the export directory, **out
 
 ## Building the installer
 
-The Windows GitHub Actions workflow runs the tests, bundles the GUI with PyInstaller, then compiles `installer/HelpGuidePublisher.iss` with Inno Setup. Its output is `HelpGuidePublisherSetup.exe`. Tagged builds publish it as a GitHub Release; manually dispatched builds retain it as a workflow artifact. The built application is self-contained, so no dependency downloader or administrator-installed Python is required on the target PC.
+The Windows GitHub Actions workflow runs the tests, bundles the GUI and the Playwright browser driver with PyInstaller, then compiles `installer/HelpGuidePublisher.iss` with Inno Setup. Its output is `HelpGuidePublisherSetup.exe`. Tagged builds publish it as a GitHub Release; manually dispatched builds retain it as a workflow artifact. The built application is self-contained, so no dependency downloader or administrator-installed Python is required on the target PC. The Scribe exporter uses Microsoft Edge already included in supported Windows installations.

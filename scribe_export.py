@@ -1,0 +1,140 @@
+"""Visible-browser assistant for exporting guides through Scribe's normal UI.
+
+The user's Microsoft Edge profile used here is a separate local profile.  Login,
+MFA, and Scribe permissions remain in the browser; this program never receives a
+password or calls Scribe's undocumented APIs.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import os
+from pathlib import Path
+import queue
+import re
+import threading
+import time
+import urllib.parse
+
+
+WORKSPACE_URL = "https://scribehow.com/workspace"
+
+
+@dataclass(frozen=True)
+class ScribeGuide:
+    title: str
+    url: str
+
+
+def is_scribe_url(url: str) -> bool:
+    """Accept only Scribe document-viewer links, never arbitrary workspace links."""
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme == "https" and parts.hostname in {"scribehow.com", "www.scribehow.com"} and "/viewer/" in parts.path
+
+
+def guide_filename(title: str, used: set[str]) -> str:
+    """Produce a unique simple HTML filename without importing the publisher UI."""
+    stem = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:90] or "scribe-guide"
+    candidate, number = stem + ".html", 2
+    while candidate.casefold() in used:
+        candidate = stem + "-" + str(number) + ".html"; number += 1
+    used.add(candidate.casefold())
+    return candidate
+
+
+class ScribeBrowser:
+    """Owns a visible Edge/Playwright session on one worker thread."""
+    def __init__(self):
+        self.commands: queue.Queue = queue.Queue()
+        self.ready = threading.Event()
+        self.error: Exception | None = None
+        self.thread: threading.Thread | None = None
+
+    def start(self):
+        if self.thread and self.thread.is_alive():
+            return
+        self.thread = threading.Thread(target=self._run, name="Scribe browser", daemon=True)
+        self.thread.start()
+
+    def submit(self, name: str, *args, callback):
+        """Run a browser command and invoke callback(value, error) from a helper thread."""
+        reply: queue.Queue = queue.Queue(maxsize=1)
+        self.commands.put((name, args, reply))
+        def wait_for_reply():
+            value, error = reply.get()
+            callback(value, error)
+        threading.Thread(target=wait_for_reply, daemon=True).start()
+
+    def close(self):
+        if self.thread and self.thread.is_alive():
+            self.commands.put(("close", (), None))
+
+    def _run(self):
+        try:
+            from playwright.sync_api import sync_playwright
+            local = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local")))
+            profile = local / "HelpGuidePublisher" / "scribe-edge-profile"
+            profile.mkdir(parents=True, exist_ok=True)
+            with sync_playwright() as engine:
+                try:
+                    context = engine.chromium.launch_persistent_context(str(profile), channel="msedge", headless=False)
+                except Exception as error:
+                    raise RuntimeError("Microsoft Edge is required for Scribe export. Install Edge, then try again.") from error
+                page = context.pages[0] if context.pages else context.new_page()
+                context.grant_permissions(["clipboard-read", "clipboard-write"], origin="https://scribehow.com")
+                page.goto(WORKSPACE_URL, wait_until="domcontentloaded")
+                self.ready.set()
+                while True:
+                    name, args, reply = self.commands.get()
+                    if name == "close":
+                        context.close(); return
+                    try:
+                        if name == "scan": value = self._scan(page)
+                        elif name == "export": value = self._export(page, *args)
+                        else: raise ValueError("Unknown Scribe browser action.")
+                        reply.put((value, None))
+                    except Exception as error:
+                        reply.put((None, error))
+        except Exception as error:
+            self.error = error; self.ready.set()
+
+    @staticmethod
+    def _click(page, patterns: list[str]):
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
+        for pattern in patterns:
+            for locator in (page.get_by_role("button", name=re.compile(pattern, re.I)), page.get_by_text(re.compile(pattern, re.I), exact=True)):
+                try:
+                    locator.first.click(timeout=2500); return
+                except PlaywrightTimeout:
+                    continue
+        raise RuntimeError("Scribe's export control was not found. Check the visible browser, then retry.")
+
+    def _scan(self, page) -> list[ScribeGuide]:
+        page.goto(WORKSPACE_URL, wait_until="domcontentloaded")
+        # The workspace uses a virtualized list; scroll until several passes find no new viewer links.
+        found: dict[str, str] = {}
+        unchanged = 0
+        for _ in range(40):
+            anchors = page.locator("a[href]").evaluate_all("""links => links.map(a => ({url:a.href, title:(a.innerText || a.getAttribute('aria-label') || '').trim()}))""")
+            before = len(found)
+            for item in anchors:
+                if is_scribe_url(item["url"]):
+                    found[item["url"]] = item["title"] or item["url"].rsplit("/", 1)[-1].replace("_", " ")
+            unchanged = unchanged + 1 if len(found) == before else 0
+            if unchanged >= 3: break
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)"); page.wait_for_timeout(700)
+        page.evaluate("window.scrollTo(0, 0)")
+        if not found:
+            raise RuntimeError("No accessible Scribe guides were found. In the visible Edge window, finish signing in and open Documents, then scan again.")
+        return [ScribeGuide(title, url) for url, title in sorted(found.items(), key=lambda item: item[1].casefold())]
+
+    def _export(self, page, guide: ScribeGuide) -> str:
+        page.goto(guide.url, wait_until="domcontentloaded"); page.bring_to_front(); page.wait_for_timeout(800)
+        self._click(page, [r"^share$"])
+        self._click(page, [r"^export$"])
+        self._click(page, [r"export.*html", r"html.*export", r"^html$"])
+        self._click(page, [r"copy to clipboard", r"^copy$"])
+        page.wait_for_timeout(300)
+        content = page.evaluate("navigator.clipboard.readText()")
+        if not isinstance(content, str) or "<" not in content or ">" not in content:
+            raise RuntimeError("Scribe did not place HTML on the clipboard. Confirm HTML export is enabled for this guide and try again.")
+        return content

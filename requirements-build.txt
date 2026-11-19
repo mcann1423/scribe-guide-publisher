@@ -1,2 +1,3 @@
 # Build-only dependency. End users receive it inside the packaged application.
 pyinstaller==6.11.1
+playwright==1.51.0
