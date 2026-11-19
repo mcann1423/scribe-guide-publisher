@@ -11,10 +11,12 @@ import os
 from pathlib import Path
 import queue
 import re
-import sys
+import socket
+import subprocess
 import threading
 import time
 import urllib.parse
+import urllib.request
 
 
 WORKSPACE_URL = "https://scribehow.com/workspace"
@@ -66,18 +68,65 @@ def edge_executable(candidates: list[Path] | None = None) -> Path | None:
     return next((path for path in (candidates if candidates is not None else edge_candidates()) if path.is_file()), None)
 
 
+def _unused_local_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def start_edge_cdp(engine, edge: Path, profile: Path, headless: bool = False):
+    """Start Edge normally, then attach Playwright over loopback CDP.
+
+    This avoids Playwright's direct browser-launch mode, which some managed or
+    newer Edge installations close immediately.
+    """
+    port = _unused_local_port()
+    args = [str(edge), "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=" + str(port), "--user-data-dir=" + str(profile), "--no-first-run", "about:blank"]
+    if headless:
+        args.append("--headless=new")
+    process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    endpoint = "http://127.0.0.1:" + str(port)
+    deadline = time.monotonic() + 15
+    try:
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise RuntimeError("Edge closed before its local automation connection became available (exit code " + str(process.returncode) + ").")
+            try:
+                with urllib.request.urlopen(endpoint + "/json/version", timeout=1) as response:
+                    if response.status == 200:
+                        return process, engine.chromium.connect_over_cdp(endpoint)
+            except OSError:
+                time.sleep(.2)
+        raise RuntimeError("Timed out waiting for Edge's local automation connection.")
+    except Exception:
+        if process.poll() is None:
+            process.terminate()
+        raise
+
+
+def stop_edge(process, browser) -> None:
+    if browser:
+        try: browser.close()
+        except Exception: pass
+    if process and process.poll() is None:
+        process.terminate()
+        try: process.wait(timeout=3)
+        except subprocess.TimeoutExpired: process.kill()
+
+
 def browser_self_test() -> None:
     """Validate the packaged Playwright driver can start the installed Edge browser."""
     edge = edge_executable()
     if not edge:
         raise RuntimeError("Microsoft Edge was not found in its registered or standard Windows locations.")
+    import tempfile
     from playwright.sync_api import sync_playwright
-    with sync_playwright() as engine:
-        browser = engine.chromium.launch(executable_path=str(edge), headless=True)
+    with tempfile.TemporaryDirectory(prefix="scribe-edge-test-") as profile, sync_playwright() as engine:
+        process, browser = start_edge_cdp(engine, edge, Path(profile), headless=True)
         try:
-            browser.new_page().goto("about:blank")
+            browser.contexts[0].new_page().goto("about:blank")
         finally:
-            browser.close()
+            stop_edge(process, browser)
 
 
 class ScribeBrowser:
@@ -108,6 +157,7 @@ class ScribeBrowser:
             self.commands.put(("close", (), None))
 
     def _run(self):
+        process = browser = None
         try:
             from playwright.sync_api import sync_playwright
             local = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local")))
@@ -118,7 +168,8 @@ class ScribeBrowser:
                 if not edge:
                     raise RuntimeError("Microsoft Edge was not found. The exporter searched its registered Windows path and standard install folders. Reinstall or repair Edge, then try again.")
                 try:
-                    context = engine.chromium.launch_persistent_context(str(profile), executable_path=str(edge), headless=False)
+                    process, browser = start_edge_cdp(engine, edge, profile)
+                    context = browser.contexts[0]
                 except Exception as error:
                     raise RuntimeError("Microsoft Edge was found at " + str(edge) + " but browser automation could not start. Details: " + str(error)[:500]) from error
                 page = context.pages[0] if context.pages else context.new_page()
@@ -128,7 +179,7 @@ class ScribeBrowser:
                 while True:
                     name, args, reply = self.commands.get()
                     if name == "close":
-                        context.close(); return
+                        return
                     try:
                         if name == "scan": value = self._scan(page)
                         elif name == "export": value = self._export(page, *args)
@@ -138,6 +189,8 @@ class ScribeBrowser:
                         reply.put((None, error))
         except Exception as error:
             self.error = error; self.ready.set()
+        finally:
+            stop_edge(process, browser)
 
     @staticmethod
     def _click(page, patterns: list[str]):
