@@ -27,6 +27,9 @@ jobs:
       - name: Bundle self-contained application
         shell: pwsh
         run: python -m PyInstaller --noconfirm --clean --windowed --collect-all playwright --name "Help Guide Publisher" app.py
+      - name: Smoke-test packaged Edge automation
+        shell: pwsh
+        run: '& ".\dist\Help Guide Publisher\Help Guide Publisher.exe" --browser-self-test'
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress --yes

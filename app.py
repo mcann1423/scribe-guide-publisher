@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import subprocess
+import sys
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
@@ -197,4 +198,9 @@ class ScribeExportDialog(tk.Toplevel):
             self.todo=[]; self.export_button.configure(state='normal'); self.status.set('Export stopped.'); messagebox.showerror('Could not save export',guide.title+':\n'+str(error),parent=self); return
         self.export_next()
 
-if __name__=='__main__': App().mainloop()
+if __name__=='__main__':
+    if '--browser-self-test' in sys.argv:
+        from scribe_export import browser_self_test
+        browser_self_test()
+    else:
+        App().mainloop()

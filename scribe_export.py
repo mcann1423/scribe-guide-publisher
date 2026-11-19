@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import queue
 import re
+import sys
 import threading
 import time
 import urllib.parse
@@ -39,6 +40,44 @@ def guide_filename(title: str, used: set[str]) -> str:
         candidate = stem + "-" + str(number) + ".html"; number += 1
     used.add(candidate.casefold())
     return candidate
+
+
+def edge_candidates() -> list[Path]:
+    """Known Edge locations plus Windows' registered application path."""
+    candidates: list[Path] = []
+    if os.name == "nt":
+        try:
+            import winreg
+            for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                try:
+                    with winreg.OpenKey(hive, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe") as key:
+                        candidates.append(Path(winreg.QueryValueEx(key, None)[0]))
+                except OSError:
+                    pass
+        except ImportError:
+            pass
+    for root in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
+        if root:
+            candidates.append(Path(root) / "Microsoft" / "Edge" / "Application" / "msedge.exe")
+    return candidates
+
+
+def edge_executable(candidates: list[Path] | None = None) -> Path | None:
+    return next((path for path in (candidates if candidates is not None else edge_candidates()) if path.is_file()), None)
+
+
+def browser_self_test() -> None:
+    """Validate the packaged Playwright driver can start the installed Edge browser."""
+    edge = edge_executable()
+    if not edge:
+        raise RuntimeError("Microsoft Edge was not found in its registered or standard Windows locations.")
+    from playwright.sync_api import sync_playwright
+    with sync_playwright() as engine:
+        browser = engine.chromium.launch(executable_path=str(edge), headless=True)
+        try:
+            browser.new_page().goto("about:blank")
+        finally:
+            browser.close()
 
 
 class ScribeBrowser:
@@ -75,10 +114,13 @@ class ScribeBrowser:
             profile = local / "HelpGuidePublisher" / "scribe-edge-profile"
             profile.mkdir(parents=True, exist_ok=True)
             with sync_playwright() as engine:
+                edge = edge_executable()
+                if not edge:
+                    raise RuntimeError("Microsoft Edge was not found. The exporter searched its registered Windows path and standard install folders. Reinstall or repair Edge, then try again.")
                 try:
-                    context = engine.chromium.launch_persistent_context(str(profile), channel="msedge", headless=False)
+                    context = engine.chromium.launch_persistent_context(str(profile), executable_path=str(edge), headless=False)
                 except Exception as error:
-                    raise RuntimeError("Microsoft Edge is required for Scribe export. Install Edge, then try again.") from error
+                    raise RuntimeError("Microsoft Edge was found at " + str(edge) + " but browser automation could not start. Details: " + str(error)[:500]) from error
                 page = context.pages[0] if context.pages else context.new_page()
                 context.grant_permissions(["clipboard-read", "clipboard-write"], origin="https://scribehow.com")
                 page.goto(WORKSPACE_URL, wait_until="domcontentloaded")
