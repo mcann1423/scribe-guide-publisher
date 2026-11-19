@@ -1,13 +1,17 @@
 """Tk interface for the local guide publisher (Python 3.10+)."""
 import os
 from pathlib import Path
+import subprocess
+import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from publisher import Publisher, DEFAULT_EXPORTS, DEFAULT_OUTPUT, guide_id
+from updater import check_for_update, download_installer
+from version import __version__
 
 class App(tk.Tk):
     def __init__(self):
-        super().__init__(); self.title('Help Guide Publisher'); self.geometry('1000x650'); self.minsize(750,500)
+        super().__init__(); self.title('Help Guide Publisher '+__version__); self.geometry('1000x650'); self.minsize(750,500)
         self.exports=tk.StringVar(value=str(DEFAULT_EXPORTS)); self.output=tk.StringVar(value=str(DEFAULT_OUTPUT)); self.status=tk.StringVar(value='Select an export to publish or update, or a published guide to unpublish.')
         top=ttk.Frame(self,padding=12); top.pack(fill='x')
         for label,var in [('Exports',self.exports),('Prepared website',self.output)]:
@@ -21,7 +25,7 @@ class App(tk.Tk):
         ttk.Button(left,text='Publish / update selected',command=self.publish).pack(pady=8)
         self.published=tk.Listbox(right,exportselection=False); self.published.pack(fill='both',expand=True)
         ttk.Button(right,text='Unpublish selected',command=self.unpublish).pack(pady=8)
-        buttons=ttk.Frame(self,padding=12); buttons.pack(fill='x'); ttk.Button(buttons,text='Server removal list',command=self.removals).pack(side='left'); ttk.Button(buttons,text='Open prepared folder',command=self.open_output).pack(side='left',padx=8); ttk.Label(buttons,textvariable=self.status,wraplength=760).pack(side='left',fill='x',expand=True)
+        buttons=ttk.Frame(self,padding=12); buttons.pack(fill='x'); ttk.Button(buttons,text='Server removal list',command=self.removals).pack(side='left'); ttk.Button(buttons,text='Open prepared folder',command=self.open_output).pack(side='left',padx=8); self.update_button=ttk.Button(buttons,text='Check for updates',command=self.check_updates); self.update_button.pack(side='left'); ttk.Label(buttons,textvariable=self.status,wraplength=620).pack(side='left',fill='x',expand=True)
         self.engine=None; self.available_files=[]; self.published_ids=[]; self.refresh()
     def browse(self,var):
         p=filedialog.askdirectory();
@@ -89,5 +93,32 @@ class App(tk.Tk):
         try:
             self.engine.output.mkdir(parents=True,exist_ok=True); os.startfile(self.engine.output)
         except Exception as e: messagebox.showerror('Cannot open folder',str(e))
+    def check_updates(self):
+        self.update_button.configure(state='disabled'); self.status.set('Checking GitHub Releases for updates…')
+        def worker():
+            try: result=check_for_update(); self.after(0,lambda:self._update_checked(result,None))
+            except Exception as e: self.after(0,lambda:self._update_checked(None,e))
+        threading.Thread(target=worker,daemon=True).start()
+    def _update_checked(self,release,error):
+        self.update_button.configure(state='normal')
+        if error:
+            self.status.set('Could not check for updates.'); messagebox.showerror('Update check failed',str(error)); return
+        if not release:
+            self.status.set('You are running the latest version ('+__version__+').'); messagebox.showinfo('No update available','You are running the latest version ('+__version__+').'); return
+        if messagebox.askyesno('Update available','Version '+release.version+' is available. Download it and start the installer now?\n\nThe app will close so Windows can install the update.'):
+            self.update_button.configure(state='disabled'); self.status.set('Downloading update from GitHub Releases…')
+            def worker():
+                try: installer=download_installer(release); self.after(0,lambda:self._update_downloaded(installer,None))
+                except Exception as e: self.after(0,lambda:self._update_downloaded(None,e))
+            threading.Thread(target=worker,daemon=True).start()
+        else: self.status.set('Update available: '+release.version+'.')
+    def _update_downloaded(self,installer,error):
+        self.update_button.configure(state='normal')
+        if error:
+            self.status.set('Update download failed.'); messagebox.showerror('Update download failed',str(error)); return
+        try:
+            subprocess.Popen([str(installer)],close_fds=True); self.status.set('Starting installer…'); self.after(700,self.destroy)
+        except Exception as e:
+            self.status.set('Could not start installer.'); messagebox.showerror('Could not start installer',str(e))
 
 if __name__=='__main__': App().mainloop()

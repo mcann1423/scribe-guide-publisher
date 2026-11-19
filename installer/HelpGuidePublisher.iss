@@ -1,6 +1,6 @@
 ; Help Guide Publisher Windows installer. Source is ASCII for Windows PowerShell-era tooling.
 #define AppName "Help Guide Publisher"
-#define AppVersion "1.0.0"
+#define AppVersion "1.1.0"
 #define AppPublisher "Matthew Cannizzaro"
 #define AppExeName "Help Guide Publisher.exe"
 
@@ -21,6 +21,8 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#AppExeName}
 DisableProgramGroupPage=yes
+CloseApplications=yes
+RestartApplications=no
 
 [Files]
 Source: "..\dist\Help Guide Publisher\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

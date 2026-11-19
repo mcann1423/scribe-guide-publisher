@@ -8,6 +8,10 @@ Download and run `HelpGuidePublisherSetup.exe` from the project's GitHub **Relea
 
 The installer does not install or change Apache, FTP software, browser extensions, services, scheduled tasks, or anything on the web server. You still need access to the export and prepared website folders, including the `H:` drive if using the defaults, plus internet access to download screenshots.
 
+## Updates
+
+Use **Check for updates** in the application. It checks the public GitHub Releases page over HTTPS. When a newer release is available, the application downloads the single installer, verifies its advertised size (and SHA-256 checksum when GitHub provides one), launches it, and closes so the normal installer can upgrade the app. No GitHub account, token, Python installation, or separate updater is required. You can also download the newest installer manually from Releases.
+
 If an installer is not available yet, developers can run the source checkout with Windows 10/11 and Python 3.10 or later (including Tcl/Tk and the Python launcher `py`) by double-clicking `Start-Guide-Publisher.bat`.
 
 The defaults are `H:\HTML\Exports` and `H:\HTML\luna\tech-services\help-guides`. Select different folders with Browse and click **Load / refresh**. The paths must not overlap. Use a **dedicated** output folder: the app owns its `index.html`, `guide-style.css` and `guide-search.js`; it refuses first use if any already exist. Do not manually add files to its per-guide image folders.
