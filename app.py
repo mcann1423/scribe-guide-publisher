@@ -12,7 +12,9 @@ class App(tk.Tk):
         top=ttk.Frame(self,padding=12); top.pack(fill='x')
         for label,var in [('Exports',self.exports),('Prepared website',self.output)]:
             row=ttk.Frame(top); row.pack(fill='x',pady=3); ttk.Label(row,text=label,width=18).pack(side='left'); ttk.Entry(row,textvariable=var).pack(side='left',fill='x',expand=True); ttk.Button(row,text='Browse…',command=lambda v=var:self.browse(v)).pack(side='left',padx=4)
-        ttk.Button(top,text='Load / refresh',command=self.refresh).pack(anchor='w',pady=6)
+        controls=ttk.Frame(top); controls.pack(anchor='w',pady=6)
+        ttk.Button(controls,text='Load / refresh',command=self.refresh).pack(side='left')
+        ttk.Button(controls,text='Paste HTML and publish…',command=self.paste_html).pack(side='left',padx=8)
         panels=ttk.Panedwindow(self,orient='horizontal'); panels.pack(fill='both',expand=True,padx=12)
         left=ttk.Labelframe(panels,text='HTML exports',padding=8); right=ttk.Labelframe(panels,text='Published locally',padding=8); panels.add(left,weight=1); panels.add(right,weight=1)
         self.available=tk.Listbox(left,exportselection=False); self.available.pack(fill='both',expand=True)
@@ -43,6 +45,33 @@ class App(tk.Tk):
             self.status.set('Downloading images and preparing guide…'); self.update_idletasks()
             warnings=self.engine.publish(p); self.refresh(); messagebox.showinfo('Published locally','Guide prepared. Deploy it through your usual staging process.'+ ('\n\nReview:\n'+'\n'.join(dict.fromkeys(warnings)) if warnings else ''))
         except Exception as e: messagebox.showerror('Could not publish',str(e)); self.refresh()
+    def paste_html(self):
+        if not self.engine:
+            return
+        dialog=tk.Toplevel(self); dialog.title('Paste HTML and publish'); dialog.geometry('860x640'); dialog.minsize(600,440); dialog.transient(self); dialog.grab_set()
+        frame=ttk.Frame(dialog,padding=12); frame.pack(fill='both',expand=True)
+        ttk.Label(frame,text='Export filename (this becomes the stable public guide URL):').pack(anchor='w')
+        filename=tk.StringVar(value='new-guide.html')
+        entry=ttk.Entry(frame,textvariable=filename); entry.pack(fill='x',pady=(2,10)); entry.focus_set(); entry.select_range(0,'end')
+        ttk.Label(frame,text='Paste exported HTML:').pack(anchor='w')
+        text=tk.Text(frame,wrap='none',undo=True); text.pack(fill='both',expand=True,pady=(2,10))
+        def publish_pasted():
+            name=filename.get().strip()
+            try:
+                existing=self.engine.exports / name
+                if existing.exists() and not messagebox.askyesno('Replace export?',f'{name} already exists. Replace its original export and publish the updated guide?',parent=dialog):
+                    return
+                if not messagebox.askyesno('Confirm public guide',f'Create {name}, then publish it locally?\n\nThe output is public when deployed. Have you reviewed its text and screenshots for sensitive information?',parent=dialog):
+                    return
+                self.status.set('Saving pasted export, downloading images, and preparing guide…'); self.update_idletasks()
+                source=self.engine.save_pasted_export(name,text.get('1.0','end-1c'))
+                warnings=self.engine.publish(source); dialog.destroy(); self.refresh()
+                messagebox.showinfo('Published locally','Original export saved and guide prepared. Deploy it through your usual staging process.'+ ('\n\nReview:\n'+'\n'.join(dict.fromkeys(warnings)) if warnings else ''))
+            except Exception as e:
+                messagebox.showerror('Could not publish pasted HTML',str(e),parent=dialog); self.refresh()
+        buttons=ttk.Frame(frame); buttons.pack(fill='x')
+        ttk.Button(buttons,text='Publish pasted HTML',command=publish_pasted).pack(side='right')
+        ttk.Button(buttons,text='Cancel',command=dialog.destroy).pack(side='right',padx=8)
     def unpublish(self):
         if not self.engine or not self.published.curselection(): return
         ident=self.published_ids[self.published.curselection()[0]]

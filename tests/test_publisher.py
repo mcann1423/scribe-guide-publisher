@@ -41,6 +41,23 @@ class Tests(unittest.TestCase):
   self.assertTrue((self.output/'images/spam/notes.txt').exists())
  def test_reserved(self):
   with self.assertRaises(ValueError):guide_id('index.html')
+ def test_save_pasted_export_then_publish(self):
+  source=self.pub.save_pasted_export('Pasted Guide.html', SAMPLE)
+  self.assertEqual(source, self.exports/'Pasted Guide.html')
+  self.assertEqual(source.read_text(encoding='utf-8'), SAMPLE)
+  self.pub.publish(source)
+  self.assertTrue((self.output/'pasted-guide.html').exists())
+  self.assertIn('pasted-guide.html', (self.output/'index.html').read_text(encoding='utf-8'))
+ def test_save_pasted_export_rejects_paths_empty_and_links(self):
+  for name, content in (('../escape.html','<h1>A</h1>'), ('guide.txt','<h1>A</h1>'), ('empty.html','   ')):
+   with self.subTest(name=name):
+    with self.assertRaises(ValueError): self.pub.save_pasted_export(name,content)
+  target=self.exports/'target.html'; target.write_text('keep')
+  link=self.exports/'linked.html'
+  try: link.symlink_to(target)
+  except (OSError,NotImplementedError): self.skipTest('symbolic links not available')
+  with self.assertRaises(ValueError): self.pub.save_pasted_export('linked.html','<h1>A</h1>')
+  self.assertEqual(target.read_text(),'keep')
  def test_failed_index_update_rolls_back(self):
   import publisher
   self.pub.publish(self.file)

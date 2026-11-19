@@ -14,7 +14,7 @@ The defaults are `H:\HTML\Exports` and `H:\HTML\luna\tech-services\help-guides`.
 
 ## Workflow
 
-1. Export HTML to the Exports folder. Name each export uniquely; the filename becomes a normalized public URL. Review the guide and screenshots for sensitive details; output will be public.
+1. Export HTML to the Exports folder, **or** click **Paste HTML and publish** and paste an export directly into the app. In the paste window, choose the export filename; the app saves the original UTF-8 HTML in the Exports folder before publishing it. Name each export uniquely; the filename becomes a normalized public URL. Review the guide and screenshots for sensitive details; output will be public.
 2. Load / refresh. Select an export and **Publish / update selected**. The tool downloads images, then creates a local page and updates the index. Empty alt text and unsupported relative links are reported for review.
 3. Replace an export with an updated version using the **same filename**, then publish it again to keep its link. Different filenames are new guides. Similar filenames can normalize to the same URL: the tool reports the collision rather than overwriting another guide.
 4. **Unpublish selected** removes the local generated guide, its managed image folder, and its index entry. This does **not** remove an existing server copy. Open **Server removal list** to see paths that may still be live. Remove them manually or perform your usual clean-copy deployment; clear notices only after verifying the live site. If a guide is republished, a prior removal notice stays until cleared: do not delete its current server copy without checking.

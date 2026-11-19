@@ -166,6 +166,20 @@ class Publisher:
             else: atomic_write(path,data)
     def exports_list(self):
         return sorted((p for p in self.exports.iterdir() if p.is_file() and p.suffix.lower() in ('.html','.htm')),key=lambda p:p.name.casefold()) if self.exports.is_dir() else []
+    def save_pasted_export(self, filename, content):
+        """Save pasted HTML as an original export, without touching published output."""
+        name = Path(filename).name
+        if name != filename or not name or Path(name).suffix.lower() not in ('.html', '.htm'):
+            raise ValueError('Export filename must be a simple name ending in .html or .htm.')
+        guide_id(name)
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError('Paste the exported HTML before publishing.')
+        self.exports.mkdir(parents=True, exist_ok=True)
+        target = self.exports / name
+        if target.is_symlink():
+            raise ValueError('Export filename is a symbolic link; refusing to replace it.')
+        atomic_write(target, content.encode('utf-8'))
+        return target
     def _check_owned(self, ident, source):
         rec=self.state['guides'].get(ident)
         if rec and rec['source'].casefold()!=source.name.casefold(): raise ValueError('Filename collides with published guide '+rec['source'])
