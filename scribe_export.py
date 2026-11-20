@@ -247,7 +247,7 @@ class ScribeBrowser:
         self._click(page, "Share", [r"^share$", r"share this scribe"]); page.wait_for_timeout(300)
         self._click(page, "Export menu", [r"^export$", r"^export\b", r"download"]); page.wait_for_timeout(300)
         self._click_html_export(page); page.wait_for_timeout(300)
-        self._click(page, "Copy HTML", [r"copy.*clipboard", r"copy.*html", r"^copy$"])
+        self._click(page, "Copy HTML", [r"copy.*clipboard", r"copy.*html", r"copy.*code", r"^copy$"])
         page.wait_for_timeout(300)
         content = page.evaluate("navigator.clipboard.readText()")
         if not isinstance(content, str) or "<" not in content or ">" not in content:
