@@ -81,7 +81,7 @@ def start_edge_cdp(engine, edge: Path, profile: Path, headless: bool = False):
     newer Edge installations close immediately.
     """
     port = _unused_local_port()
-    args = [str(edge), "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=" + str(port), "--user-data-dir=" + str(profile), "--no-first-run", "about:blank"]
+    args = [str(edge), "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=" + str(port), "--remote-allow-origins=*", "--user-data-dir=" + str(profile), "--no-first-run", "--new-window", "about:blank"]
     if headless:
         args.append("--headless=new")
     process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -89,8 +89,6 @@ def start_edge_cdp(engine, edge: Path, profile: Path, headless: bool = False):
     deadline = time.monotonic() + 15
     try:
         while time.monotonic() < deadline:
-            if process.poll() is not None:
-                raise RuntimeError("Edge closed before its local automation connection became available (exit code " + str(process.returncode) + ").")
             try:
                 with urllib.request.urlopen(endpoint + "/json/version", timeout=1) as response:
                     if response.status == 200:
