@@ -191,15 +191,18 @@ class ScribeBrowser:
             stop_edge(process, browser)
 
     @staticmethod
-    def _click(page, patterns: list[str]):
+    def _click(page, stage: str, patterns: list[str]):
         from playwright.sync_api import TimeoutError as PlaywrightTimeout
         for pattern in patterns:
-            for locator in (page.get_by_role("button", name=re.compile(pattern, re.I)), page.get_by_text(re.compile(pattern, re.I), exact=True)):
+            matcher = re.compile(pattern, re.I)
+            locators = [page.get_by_role(role, name=matcher) for role in ("button", "link", "menuitem", "option")]
+            locators += [page.locator("button, a, [role=button], [role=link], [role=menuitem], [role=option]").filter(has_text=matcher)]
+            for locator in locators:
                 try:
                     locator.first.click(timeout=2500); return
                 except PlaywrightTimeout:
                     continue
-        raise RuntimeError("Scribe's export control was not found. Check the visible browser, then retry.")
+        raise RuntimeError("Scribe's " + stage + " control was not found. Check the visible browser, then retry.")
 
     def _scan(self, page) -> list[ScribeGuide]:
         # Scan the list the user deliberately opened in the visible Edge window.
@@ -225,10 +228,10 @@ class ScribeBrowser:
 
     def _export(self, page, guide: ScribeGuide) -> str:
         page.goto(guide.url, wait_until="domcontentloaded"); page.bring_to_front(); page.wait_for_timeout(800)
-        self._click(page, [r"^share$"])
-        self._click(page, [r"^export$"])
-        self._click(page, [r"export.*html", r"html.*export", r"^html$"])
-        self._click(page, [r"copy to clipboard", r"^copy$"])
+        self._click(page, "Share", [r"^share$", r"share this scribe"]); page.wait_for_timeout(300)
+        self._click(page, "Export menu", [r"^export$", r"^export\b", r"download"]); page.wait_for_timeout(300)
+        self._click(page, "HTML export", [r"export.*html", r"html.*export", r"^html$", r"web page"]); page.wait_for_timeout(300)
+        self._click(page, "Copy HTML", [r"copy.*clipboard", r"copy.*html", r"^copy$"])
         page.wait_for_timeout(300)
         content = page.evaluate("navigator.clipboard.readText()")
         if not isinstance(content, str) or "<" not in content or ">" not in content:
