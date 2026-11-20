@@ -58,6 +58,19 @@ class Tests(unittest.TestCase):
   except (OSError,NotImplementedError): self.skipTest('symbolic links not available')
   with self.assertRaises(ValueError): self.pub.save_pasted_export('linked.html','<h1>A</h1>')
   self.assertEqual(target.read_text(),'keep')
+ def test_scribe_export_history_records_successes(self):
+  self.pub.record_scribe_export('https://scribehow.com/viewer/Guide__abc','My Guide','my-guide.html')
+  history=self.pub.scribe_export_history()
+  self.assertEqual(history['https://scribehow.com/viewer/Guide__abc']['title'],'My Guide')
+  self.assertEqual(history['https://scribehow.com/viewer/Guide__abc']['filename'],'my-guide.html')
+  self.assertTrue(history['https://scribehow.com/viewer/Guide__abc']['exported_at'].endswith('+00:00'))
+  self.assertEqual(Publisher(self.exports,self.output).scribe_export_history(),history)
+ def test_scribe_history_backfills_an_existing_export(self):
+  old=self.exports/'old-guide.html'; old.write_text('<a href="https://scribehow.com/viewer/Old_Guide__abc?back=documents">Guide</a>',encoding='utf-8')
+  guide_url='https://scribehow.com/viewer/Old_Guide__abc'
+  history=self.pub.reconcile_scribe_export_history([(guide_url,'Old Guide')])
+  self.assertEqual(history[guide_url]['filename'],'old-guide.html')
+  self.assertEqual(history[guide_url]['title'],'Old Guide')
  def test_failed_index_update_rolls_back(self):
   import publisher
   self.pub.publish(self.file)

@@ -1,5 +1,6 @@
 """Local, static Scribe guide publisher. Never communicates with a web server."""
 from __future__ import annotations
+from datetime import datetime, timezone
 import html
 from html.parser import HTMLParser
 import json
@@ -149,6 +150,13 @@ class Publisher:
         # The state is only a record, never authority to delete arbitrary paths.
         for ident, rec in data['guides'].items():
             if guide_id(ident+'.html')!=ident or not isinstance(rec,dict): raise ValueError('Invalid guide state.')
+        # Keep existing version 1 state compatible. This is only a local
+        # convenience record and never authority to publish or delete files.
+        history=data.setdefault('scribe_exports',{})
+        if not isinstance(history,dict): raise ValueError('Scribe export history is invalid; restore its backup.')
+        for url, rec in history.items():
+            if not isinstance(url,str) or not isinstance(rec,dict) or not all(isinstance(rec.get(key),str) for key in ('title','filename','exported_at')):
+                raise ValueError('Scribe export history is invalid; restore its backup.')
         return data
     def _save(self): atomic_write(self.state_path, json.dumps(self.state,ensure_ascii=False,indent=2).encode('utf-8'))
     def _check_links(self, ident=None):
@@ -180,6 +188,42 @@ class Publisher:
             raise ValueError('Export filename is a symbolic link; refusing to replace it.')
         atomic_write(target, content.encode('utf-8'))
         return target
+    def scribe_export_history(self):
+        """Return a safe copy of locally recorded successful Scribe exports."""
+        return json.loads(json.dumps(self.state.get('scribe_exports',{})))
+    def record_scribe_export(self, url, title, filename):
+        """Record an export after its original HTML has been saved locally."""
+        name=Path(filename).name
+        if name != filename or Path(name).suffix.lower() not in ('.html','.htm'):
+            raise ValueError('Scribe export filename is invalid.')
+        if not all(isinstance(value,str) and value.strip() for value in (url,title)):
+            raise ValueError('Scribe export record is invalid.')
+        self.state.setdefault('scribe_exports',{})[url]={
+            'title':title,
+            'filename':name,
+            'exported_at':datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        }
+        self._save()
+    def reconcile_scribe_export_history(self, guides):
+        """Backfill history for existing exports whose source contains a guide URL.
+
+        This is local-only migration for exports made before export history existed.
+        It deliberately requires an exact Scribe viewer URL (apart from query and
+        fragment), so an unrelated HTML file is never guessed into the history.
+        """
+        wanted={urllib.parse.urlunsplit(urllib.parse.urlsplit(url)._replace(query='',fragment='')):(url,title) for url,title in guides}
+        changed=False
+        history=self.state.setdefault('scribe_exports',{})
+        for source in self.exports_list():
+            try: content=html.unescape(source.read_text(encoding='utf-8-sig'))
+            except (OSError,UnicodeError): continue
+            for key, (url,title) in wanted.items():
+                if url in history or key not in content: continue
+                exported_at=datetime.fromtimestamp(source.stat().st_mtime,timezone.utc).replace(microsecond=0).isoformat()
+                history[url]={'title':title,'filename':source.name,'exported_at':exported_at}
+                changed=True
+        if changed: self._save()
+        return self.scribe_export_history()
     def _check_owned(self, ident, source):
         rec=self.state['guides'].get(ident)
         if rec and rec['source'].casefold()!=source.name.casefold(): raise ValueError('Filename collides with published guide '+rec['source'])

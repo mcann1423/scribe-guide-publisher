@@ -6,6 +6,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
+from datetime import datetime, timezone
 from publisher import Publisher, DEFAULT_EXPORTS, DEFAULT_OUTPUT, guide_id
 from scribe_export import ScribeBrowser, ScribeGuide, guide_filename
 from updater import check_for_update, download_installer
@@ -131,7 +132,7 @@ class App(tk.Tk):
 class ScribeExportDialog(tk.Toplevel):
     """Guide selection and hand-off between a visible Edge session and local exports."""
     def __init__(self, app):
-        super().__init__(app); self.app=app; self.browser=ScribeBrowser(); self.guides=[]; self.todo=[]
+        super().__init__(app); self.app=app; self.browser=ScribeBrowser(); self.guides=[]; self.todo=[]; self.history={}; self.filenames={}; self.rows={}
         self.title('Export from Scribe'); self.geometry('880x570'); self.minsize(680,420); self.transient(app); self.protocol('WM_DELETE_WINDOW',self.close)
         frame=ttk.Frame(self,padding=12); frame.pack(fill='both',expand=True)
         self.status=tk.StringVar(value='Open Edge, sign in to Scribe yourself, then scan the Documents page.')
@@ -141,11 +142,12 @@ class ScribeExportDialog(tk.Toplevel):
         self.scan_button=ttk.Button(buttons,text='Scan accessible guides',command=self.scan,state='disabled'); self.scan_button.pack(side='left',padx=8)
         self.rename_button=ttk.Button(buttons,text='Rename selected export…',command=self.rename,state='disabled'); self.rename_button.pack(side='left')
         self.publish_after=tk.BooleanVar(value=False); ttk.Checkbutton(buttons,text='Publish locally after each export',variable=self.publish_after).pack(side='right')
+        self.show_exported=tk.BooleanVar(value=True); self.history_toggle=ttk.Checkbutton(buttons,text='Show previously exported',variable=self.show_exported,command=self.render_guides,state='disabled'); self.history_toggle.pack(side='right',padx=10)
         style=ttk.Style(self); style.configure('Treeview',rowheight=28); style.configure('ScribeExport.Treeview',rowheight=28)
         treebox=ttk.Frame(frame); treebox.pack(fill='both',expand=True)
-        self.list=ttk.Treeview(treebox,columns=('filename',),show='tree headings',selectmode='extended',style='ScribeExport.Treeview')
-        self.list.heading('#0',text='Scribe guide'); self.list.heading('filename',text='Export filename')
-        self.list.column('#0',width=460,minwidth=260,stretch=True); self.list.column('filename',width=300,minwidth=220,stretch=True)
+        self.list=ttk.Treeview(treebox,columns=('filename','exported'),show='tree headings',selectmode='extended',style='ScribeExport.Treeview')
+        self.list.heading('#0',text='Scribe guide'); self.list.heading('filename',text='Export filename'); self.list.heading('exported',text='Last exported')
+        self.list.column('#0',width=340,minwidth=220,stretch=True); self.list.column('filename',width=290,minwidth=180,stretch=True); self.list.column('exported',width=165,minwidth=130,stretch=False)
         vertical=ttk.Scrollbar(treebox,orient='vertical',command=self.list.yview); horizontal=ttk.Scrollbar(treebox,orient='horizontal',command=self.list.xview)
         self.list.configure(yscrollcommand=vertical.set,xscrollcommand=horizontal.set)
         treebox.columnconfigure(0,weight=1); treebox.rowconfigure(0,weight=1)
@@ -170,9 +172,29 @@ class ScribeExportDialog(tk.Toplevel):
         self.scan_button.configure(state='normal')
         if error:
             self.status.set('Scan did not complete.'); messagebox.showerror('Scribe scan failed',str(error),parent=self); return
-        used={p.name.casefold() for p in self.app.engine.exports_list()}; self.guides=guides; self.list.delete(*self.list.get_children())
-        for guide in guides: self.list.insert('', 'end', values=(guide_filename(guide.title,used),),text=guide.title)
-        self.rename_button.configure(state='normal'); self.export_button.configure(state='normal'); self.status.set(str(len(guides))+' accessible guides found. Select the ones to export and confirm their filenames.')
+        used={p.name.casefold() for p in self.app.engine.exports_list()}; self.guides=guides; self.history=self.app.engine.reconcile_scribe_export_history([(guide.url,guide.title) for guide in guides]); self.filenames={}; assigned=set()
+        for guide in guides:
+            record=self.history.get(guide.url,{})
+            prior=record.get('filename')
+            if isinstance(prior,str) and Path(prior).name==prior and Path(prior).suffix.lower() in ('.html','.htm') and prior.casefold() not in assigned:
+                name=prior; assigned.add(prior.casefold())
+            else:
+                names=used | assigned; name=guide_filename(guide.title,names); assigned.add(name.casefold())
+            self.filenames[guide.url]=name
+        self.render_guides()
+        self.history_toggle.configure(state='normal'); self.rename_button.configure(state='normal'); self.export_button.configure(state='normal'); self.status.set(str(len(guides))+' accessible guides found. Use “Show previously exported” to filter the list.')
+    def export_label(self, guide):
+        record=self.history.get(guide.url)
+        if not record: return 'Not previously exported'
+        stamp=record.get('exported_at','')
+        try: return datetime.fromisoformat(stamp).astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+        except ValueError: return 'Previously exported'
+    def render_guides(self):
+        self.list.delete(*self.list.get_children()); self.rows={}
+        for number, guide in enumerate(self.guides):
+            if not self.show_exported.get() and guide.url in self.history: continue
+            item='guide-'+str(number); self.rows[item]=guide
+            self.list.insert('', 'end',iid=item,values=(self.filenames[guide.url],self.export_label(guide)),text=guide.title)
     def rename(self):
         selected=self.list.selection()
         if len(selected)!=1: messagebox.showinfo('Rename export','Select one guide first.',parent=self); return
@@ -183,12 +205,12 @@ class ScribeExportDialog(tk.Toplevel):
             if Path(name).name != name or Path(name).suffix.lower() not in ('.html','.htm'): raise ValueError('Filename must be a simple name ending in .html or .htm.')
             guide_id(name)
         except ValueError as error: messagebox.showerror('Invalid filename',str(error),parent=self); return
-        self.list.item(item,values=(name,))
+        guide=self.rows[item]; self.filenames[guide.url]=name; self.list.item(item,values=(name,self.export_label(guide)))
     def export(self):
         selected=self.list.selection()
         if not selected: return
         if not messagebox.askyesno('Export selected guides','Export '+str(len(selected))+' selected guide(s) using Scribe’s normal HTML export? Existing export files with the same name will be replaced.',parent=self): return
-        self.todo=[(self.guides[self.list.index(item)],self.list.item(item,'values')[0]) for item in selected]
+        self.todo=[(self.rows[item],self.filenames[self.rows[item].url]) for item in selected]
         self.export_button.configure(state='disabled'); self.export_next()
     def export_next(self):
         if not self.todo:
@@ -201,6 +223,8 @@ class ScribeExportDialog(tk.Toplevel):
             self.todo=[]; self.export_button.configure(state='normal'); self.status.set('Export stopped.'); messagebox.showerror('Scribe export failed',guide.title+':\n'+str(error),parent=self); return
         try:
             source=self.app.engine.save_pasted_export(filename,content)
+            self.app.engine.record_scribe_export(guide.url,guide.title,filename)
+            self.history=self.app.engine.scribe_export_history()
             if self.publish_after.get(): self.app.engine.publish(source)
         except Exception as error:
             self.todo=[]; self.export_button.configure(state='normal'); self.status.set('Export stopped.'); messagebox.showerror('Could not save export',guide.title+':\n'+str(error),parent=self); return
