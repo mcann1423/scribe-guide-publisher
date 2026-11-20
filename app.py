@@ -25,9 +25,9 @@ class App(tk.Tk):
         ttk.Button(controls,text='Export from Scribe…',command=self.scribe_export).pack(side='left')
         panels=ttk.Panedwindow(self,orient='horizontal'); panels.pack(fill='both',expand=True,padx=12)
         left=ttk.Labelframe(panels,text='HTML exports',padding=8); right=ttk.Labelframe(panels,text='Published locally',padding=8); panels.add(left,weight=1); panels.add(right,weight=1)
-        self.available=tk.Listbox(left,exportselection=False); self.available.pack(fill='both',expand=True)
+        self.available=tk.Listbox(left,exportselection=False,selectmode='extended'); self.available.pack(fill='both',expand=True)
         ttk.Button(left,text='Publish / update selected',command=self.publish).pack(pady=8)
-        self.published=tk.Listbox(right,exportselection=False); self.published.pack(fill='both',expand=True)
+        self.published=tk.Listbox(right,exportselection=False,selectmode='extended'); self.published.pack(fill='both',expand=True)
         ttk.Button(right,text='Unpublish selected',command=self.unpublish).pack(pady=8)
         buttons=ttk.Frame(self,padding=12); buttons.pack(fill='x'); ttk.Button(buttons,text='Server removal list',command=self.removals).pack(side='left'); ttk.Button(buttons,text='Open prepared folder',command=self.open_output).pack(side='left',padx=8); self.update_button=ttk.Button(buttons,text='Check for updates',command=self.check_updates); self.update_button.pack(side='left'); ttk.Label(buttons,textvariable=self.status,wraplength=620).pack(side='left',fill='x',expand=True)
         self.engine=None; self.available_files=[]; self.published_ids=[]; self.refresh()
@@ -47,12 +47,17 @@ class App(tk.Tk):
         except Exception as e: self.engine=None; messagebox.showerror('Cannot load publisher',str(e))
     def publish(self):
         if not self.engine or not self.available.curselection(): return
-        p=self.available_files[self.available.curselection()[0]]
-        if not messagebox.askyesno('Confirm public guide',f'Publish or update {p.name}?\n\nThe output is public when you deploy it. Have you reviewed its text and screenshots for sensitive information?'): return
-        try:
-            self.status.set('Downloading images and preparing guide…'); self.update_idletasks()
-            warnings=self.engine.publish(p); self.refresh(); messagebox.showinfo('Published locally','Guide prepared. Deploy it through your usual staging process.'+ ('\n\nReview:\n'+'\n'.join(dict.fromkeys(warnings)) if warnings else ''))
-        except Exception as e: messagebox.showerror('Could not publish',str(e)); self.refresh()
+        selected=[self.available_files[index] for index in self.available.curselection()]
+        names='\n'.join('• '+path.name for path in selected[:8]) + ('\n• …' if len(selected)>8 else '')
+        if not messagebox.askyesno('Confirm public guides',f'Publish or update {len(selected)} selected guide(s)?\n\n{names}\n\nThe output is public when you deploy it. Have you reviewed their text and screenshots for sensitive information?'): return
+        warnings=[]; completed=[]
+        for number, path in enumerate(selected,1):
+            try:
+                self.status.set(f'Preparing {number} of {len(selected)}: {path.name}'); self.update_idletasks()
+                warnings.extend(path.name+': '+warning for warning in self.engine.publish(path)); completed.append(path.name)
+            except Exception as error:
+                self.refresh(); messagebox.showerror('Publishing stopped',f'{path.name} could not be published:\n{error}\n\n{len(completed)} guide(s) were prepared before the error.'); return
+        self.refresh(); messagebox.showinfo('Published locally',f'{len(completed)} guide(s) prepared. Deploy them through your usual staging process.'+ ('\n\nReview:\n'+'\n'.join(dict.fromkeys(warnings)) if warnings else ''))
     def paste_html(self):
         if not self.engine:
             return
@@ -82,10 +87,17 @@ class App(tk.Tk):
         ttk.Button(buttons,text='Cancel',command=dialog.destroy).pack(side='right',padx=8)
     def unpublish(self):
         if not self.engine or not self.published.curselection(): return
-        ident=self.published_ids[self.published.curselection()[0]]
-        if not messagebox.askyesno('Unpublish locally',f'Remove {ident}.html and its images from the prepared folder?\n\nThis will NOT remove the already-deployed copy from the server.'): return
-        try: self.engine.unpublish(ident); self.refresh(); messagebox.showinfo('Unpublished locally','Check the server removal list. The live guide may remain accessible until you remove it from the server.')
-        except Exception as e: messagebox.showerror('Could not unpublish',str(e)); self.refresh()
+        selected=[self.published_ids[index] for index in self.published.curselection()]
+        names='\n'.join('• '+ident+'.html' for ident in selected[:8]) + ('\n• …' if len(selected)>8 else '')
+        if not messagebox.askyesno('Unpublish locally',f'Remove {len(selected)} selected guide(s) and their images from the prepared folder?\n\n{names}\n\nThis will NOT remove already-deployed copies from the server.'): return
+        completed=[]
+        for number, ident in enumerate(selected,1):
+            try:
+                self.status.set(f'Unpublishing {number} of {len(selected)}: {ident}.html'); self.update_idletasks()
+                self.engine.unpublish(ident); completed.append(ident)
+            except Exception as error:
+                self.refresh(); messagebox.showerror('Unpublishing stopped',f'{ident}.html could not be unpublished:\n{error}\n\n{len(completed)} guide(s) were removed before the error.'); return
+        self.refresh(); messagebox.showinfo('Unpublished locally',f'{len(completed)} guide(s) removed locally. Check the server removal list; live copies may remain accessible until you remove them from the server.')
     def removals(self):
         if not self.engine:return
         w=tk.Toplevel(self); w.title('Potential server removals'); w.geometry('700x480'); ttk.Label(w,text='These paths may still exist on the server. Remove them manually or deploy a clean copy.').pack(padx=12,pady=12)

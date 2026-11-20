@@ -1,6 +1,6 @@
 ; Help Guide Publisher Windows installer. Source is ASCII for Windows PowerShell-era tooling.
 #define AppName "Help Guide Publisher"
-#define AppVersion "1.2.8"
+#define AppVersion "1.2.9"
 #define AppPublisher "Matthew Cannizzaro"
 #define AppExeName "Help Guide Publisher.exe"
 
