@@ -141,7 +141,7 @@ class ScribeExportDialog(tk.Toplevel):
         self.scan_button=ttk.Button(buttons,text='Scan accessible guides',command=self.scan,state='disabled'); self.scan_button.pack(side='left',padx=8)
         self.rename_button=ttk.Button(buttons,text='Rename selected export…',command=self.rename,state='disabled'); self.rename_button.pack(side='left')
         self.publish_after=tk.BooleanVar(value=False); ttk.Checkbutton(buttons,text='Publish locally after each export',variable=self.publish_after).pack(side='right')
-        style=ttk.Style(self); style.configure('ScribeExport.Treeview',rowheight=32)
+        style=ttk.Style(self); style.configure('Treeview',rowheight=28); style.configure('ScribeExport.Treeview',rowheight=28)
         treebox=ttk.Frame(frame); treebox.pack(fill='both',expand=True)
         self.list=ttk.Treeview(treebox,columns=('filename',),show='tree headings',selectmode='extended',style='ScribeExport.Treeview')
         self.list.heading('#0',text='Scribe guide'); self.list.heading('filename',text='Export filename')

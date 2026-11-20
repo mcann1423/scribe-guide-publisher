@@ -204,6 +204,22 @@ class ScribeBrowser:
                     continue
         raise RuntimeError("Scribe's " + stage + " control was not found. Check the visible browser, then retry.")
 
+    @staticmethod
+    def _click_html_export(page):
+        """Click the generic Export button belonging specifically to Scribe's HTML row."""
+        from playwright.sync_api import TimeoutError as PlaywrightTimeout
+        labels = page.get_by_text(re.compile(r"^Export to HTML$", re.I))
+        for index in range(labels.count()):
+            label = labels.nth(index)
+            # The closest ancestor containing a button is the single export-format row.
+            row = label.locator("xpath=ancestor::*[.//button or .//*[@role='button']][1]")
+            for control in (row.get_by_role("button", name=re.compile(r"^export$", re.I)), row.locator("button, [role=button]").filter(has_text=re.compile(r"^export$", re.I))):
+                try:
+                    control.first.click(timeout=2500); return
+                except PlaywrightTimeout:
+                    continue
+        raise RuntimeError("Scribe's HTML export control was not found. Check the visible browser, then retry.")
+
     def _scan(self, page) -> list[ScribeGuide]:
         # Scan the list the user deliberately opened in the visible Edge window.
         # Do not navigate back to Workspace here: that would discard a Documents
@@ -230,7 +246,7 @@ class ScribeBrowser:
         page.goto(guide.url, wait_until="domcontentloaded"); page.bring_to_front(); page.wait_for_timeout(800)
         self._click(page, "Share", [r"^share$", r"share this scribe"]); page.wait_for_timeout(300)
         self._click(page, "Export menu", [r"^export$", r"^export\b", r"download"]); page.wait_for_timeout(300)
-        self._click(page, "HTML export", [r"export.*html", r"html.*export", r"^html$", r"web page"]); page.wait_for_timeout(300)
+        self._click_html_export(page); page.wait_for_timeout(300)
         self._click(page, "Copy HTML", [r"copy.*clipboard", r"copy.*html", r"^copy$"])
         page.wait_for_timeout(300)
         content = page.evaluate("navigator.clipboard.readText()")
