@@ -202,8 +202,11 @@ class ScribeBrowser:
         raise RuntimeError("Scribe's export control was not found. Check the visible browser, then retry.")
 
     def _scan(self, page) -> list[ScribeGuide]:
-        page.goto(WORKSPACE_URL, wait_until="domcontentloaded")
-        # The workspace uses a virtualized list; scroll until several passes find no new viewer links.
+        # Scan the list the user deliberately opened in the visible Edge window.
+        # Do not navigate back to Workspace here: that would discard a Documents
+        # filter/folder and leave nothing useful to enumerate.
+        page.bring_to_front()
+        # Scribe uses a virtualized list; scroll until several passes find no new viewer links.
         found: dict[str, str] = {}
         unchanged = 0
         for _ in range(40):
@@ -217,7 +220,7 @@ class ScribeBrowser:
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)"); page.wait_for_timeout(700)
         page.evaluate("window.scrollTo(0, 0)")
         if not found:
-            raise RuntimeError("No accessible Scribe guides were found. In the visible Edge window, finish signing in and open Documents, then scan again.")
+            raise RuntimeError("No accessible Scribe guides were found. In the visible Edge window, open Documents or the folder containing your guides, then scan again.")
         return [ScribeGuide(title, url) for url, title in sorted(found.items(), key=lambda item: item[1].casefold())]
 
     def _export(self, page, guide: ScribeGuide) -> str:
